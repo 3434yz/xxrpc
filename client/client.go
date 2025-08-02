@@ -1,0 +1,47 @@
+package client
+
+import (
+	"encoding/binary"
+	"net"
+
+	"xxrpc/codec"
+	"xxrpc/protocol"
+)
+
+type Client struct {
+	conn  net.Conn
+	codec codec.JSONCodec
+	seq   uint64
+}
+
+func Dial(addr string) (*Client, error) {
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	return &Client{conn: conn}, nil
+}
+
+func (c *Client) Call(service, method string, args any) (*protocol.Response, error) {
+	payload, _ := c.codec.Encode(args)
+	req := protocol.Request{
+		Service: service,
+		Method:  method,
+		Params:  payload,
+	}
+
+	c.seq++
+
+	data, _ := c.codec.Encode(req)
+	binary.Write(c.conn, binary.BigEndian, uint32(len(data)))
+	c.conn.Write(data)
+
+	var length uint32
+	binary.Read(c.conn, binary.BigEndian, &length)
+	buf := make([]byte, length)
+	c.conn.Read(buf)
+
+	var resp protocol.Response
+	c.codec.Decode(buf, &resp)
+	return &resp, nil
+}

@@ -1,0 +1,62 @@
+# 可执行文件
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go编译生成的文件
+*.o
+*.a
+*.so
+
+# Go模块相关
+go.mod
+go.sum
+vendor/
+
+# 测试相关
+*_test.go
+*_test.out
+_test/
+coverage.out
+coverage/
+
+# 构建输出目录
+bin/
+build/
+dist/
+
+# 临时文件
+*.tmp
+*.bak
+*.swp
+*~
+
+# 日志文件
+*.log
+
+# 环境变量文件
+.env
+.env.local
+.env.*.local
+
+# IDE配置
+.idea/
+.vscode/
+*.sublime-*
+*.iml
+*.suo
+.DS_Store
+.project
+.classpath
+.settings/
+
+# 操作系统生成的文件
+Thumbs.db
+.DS_Store
+
+# 其他工具生成的文件
+.terraform/
+.ansible/
+.node_modules/
