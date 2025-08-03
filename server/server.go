@@ -6,15 +6,36 @@ import (
 	"net"
 	"reflect"
 
+	"go.uber.org/zap"
+
 	"xxrpc/codec"
 	"xxrpc/protocol"
 	"xxrpc/registry"
 )
 
+type Option interface {
+	Apply(*Server)
+}
+
+// Option is a functional option for configuring the server.
+type optionFunc func(*Server)
+
+func (f optionFunc) Apply(srv *Server) {
+	f(srv)
+}
+
+func WithLogger(func(*Server) *Server) Option {
+	return optionFunc(func(srv *Server) {
+		srv.logger = zap.NewExample()
+	})
+}
+
 type Server struct {
 	addr     string
 	codec    codec.JSONCodec
 	registry *registry.Registry
+
+	logger *zap.Logger
 }
 
 func (s *Server) Register(name string, service any) {
@@ -64,19 +85,28 @@ func (s *Server) Invoke(req *protocol.Request) (*protocol.Response, error) {
 	}, nil
 }
 
-func NewServer(addr string, registry *registry.Registry) *Server {
-	return &Server{
+func NewServer(addr string, registry *registry.Registry, opts ...Option) *Server {
+	s := &Server{
 		addr:     addr,
 		codec:    codec.JSONCodec{},
 		registry: registry,
+		logger:   zap.NewExample(),
 	}
+
+	for _, opt := range opts {
+		opt.Apply(s)
+	}
+
+	return s
 }
 
 func (s *Server) Start() error {
 	ln, err := net.Listen("tcp", s.addr)
 	if err != nil {
+		s.logger.Error("failed to start server", zap.Error(err))
 		return err
 	}
+	s.logger.Info("RPC Server listening", zap.String("address", s.addr))
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
