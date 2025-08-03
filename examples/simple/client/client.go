@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"xxrpc/client"
+	"xxrpc/examples/simple/echo"
 )
 
 func main() {
@@ -13,7 +14,9 @@ func main() {
 		log.Fatalf("client dial error: %v", err)
 	}
 
-	resp, err := cli.Call("EchoService", "SayHello", "hello world")
+	resp, err := cli.Call("EchoService", "SayHello", echo.SayHelloReq{
+		Message: "Hello, World!",
+	})
 	if err != nil {
 		log.Fatalf("rpc call error: %v", err)
 	}

@@ -8,12 +8,13 @@ import (
 
 	"xxrpc/codec"
 	"xxrpc/protocol"
+	"xxrpc/registry"
 )
 
 type Server struct {
 	addr     string
 	codec    codec.JSONCodec
-	registry *Registry
+	registry *registry.Registry
 }
 
 func (s *Server) Register(name string, service any) {
@@ -21,35 +22,37 @@ func (s *Server) Register(name string, service any) {
 }
 
 func (s *Server) Invoke(req *protocol.Request) (*protocol.Response, error) {
-	method, err := s.registry.Find(req.Service, req.Method)
+	receiver, method, err := s.registry.Find(req.Service, req.Method)
 	if err != nil {
 		return nil, err
 	}
 
-	methodType := method.method.Type
-	paramType := methodType.In(1) // 第一个参数是接收者，第二个参数是实际的参数
+	methodType := method.Type
+	paramType := methodType.In(1)
 
-	paramPtr := reflect.New(paramType)
+	// 创建参数实例
+	paramPtr := reflect.New(paramType) // 指针类型
 	if err := s.codec.Decode(req.Params, paramPtr.Interface()); err != nil {
 		return nil, err
 	}
 
-	results := method.method.Func.Call([]reflect.Value{method.receiver, paramPtr.Elem()})
+	// 调用目标方法：receiver.Method(args)
+	results := method.Func.Call([]reflect.Value{receiver, paramPtr.Elem()})
 
+	// 解析返回值
 	retValue := results[0].Interface()
 	var retErr error
 	if !results[1].IsNil() {
 		retErr = results[1].Interface().(error)
 	}
 
-	// 如果有错误
 	if retErr != nil {
 		return &protocol.Response{
 			Error: retErr.Error(),
 		}, nil
 	}
 
-	// 编码返回值
+	// 编码返回数据
 	respData, err := s.codec.Encode(retValue)
 	if err != nil {
 		return nil, err
@@ -61,11 +64,11 @@ func (s *Server) Invoke(req *protocol.Request) (*protocol.Response, error) {
 	}, nil
 }
 
-func New(addr string) *Server {
+func NewServer(addr string, registry *registry.Registry) *Server {
 	return &Server{
 		addr:     addr,
 		codec:    codec.JSONCodec{},
-		registry: NewRegister(),
+		registry: registry,
 	}
 }
 

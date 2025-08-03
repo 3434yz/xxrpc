@@ -2,20 +2,17 @@ package main
 
 import (
 	"log"
+	"xxrpc/registry"
 	"xxrpc/server"
+
+	"xxrpc/examples/simple/echo"
 )
 
-type EchoService struct{}
-
-func (s *EchoService) SayHello(msg string) (string, error) {
-	return "Echo: " + msg, nil
-}
-
 func main() {
-	s := server.New(":8888")
+	s := server.NewServer(":8888", registry.NewRegister())
 	log.Println("RPC Server listening on :8888")
 
-	s.Register("EchoService", &EchoService{})
+	s.Register("EchoService", &echo.EchoService{})
 
 	if err := s.Start(); err != nil {
 		log.Fatalf("server start error: %v", err)
