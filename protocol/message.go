@@ -9,7 +9,7 @@ type Request struct {
 func (r *Request) Reset() {
 	r.Service = ""
 	r.Method = ""
-	r.Params = nil
+	r.Params = r.Params[:0] // 清空切片但不释放内存
 }
 
 type Response struct {
@@ -18,6 +18,6 @@ type Response struct {
 }
 
 func (r *Response) Reset() {
-	r.Data = nil
+	r.Data = r.Data[:0] // 清空切片但不释放内存
 	r.Error = ""
 }
