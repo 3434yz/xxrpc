@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"net"
 
-	"xxrpc/codec"
+	"xxrpc/internal/codec"
 	"xxrpc/protocol"
 )
 
@@ -23,7 +23,7 @@ func Dial(addr string) (*Client, error) {
 }
 
 func (c *Client) Call(service, method string, args any) (*protocol.Response, error) {
-	payload, _ := c.codec.Encode(args)
+	payload, _ := c.codec.Marshal(args)
 	req := protocol.Request{
 		Service: service,
 		Method:  method,
@@ -32,7 +32,7 @@ func (c *Client) Call(service, method string, args any) (*protocol.Response, err
 
 	c.seq++
 
-	data, _ := c.codec.Encode(req)
+	data, _ := c.codec.Marshal(req)
 	binary.Write(c.conn, binary.BigEndian, uint32(len(data)))
 	c.conn.Write(data)
 
@@ -42,6 +42,6 @@ func (c *Client) Call(service, method string, args any) (*protocol.Response, err
 	c.conn.Read(buf)
 
 	var resp protocol.Response
-	c.codec.Decode(buf, &resp)
+	c.codec.Unmarshal(buf, &resp)
 	return &resp, nil
 }

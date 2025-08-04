@@ -8,7 +8,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"xxrpc/codec"
+	"xxrpc/internal/codec"
 	"xxrpc/internal/pool"
 	"xxrpc/protocol"
 	"xxrpc/registry"
@@ -31,10 +31,15 @@ func WithLogger(logger *zap.Logger) Option {
 	})
 }
 
+func WithCodec(c codec.Codec) Option {
+	return optionFunc(func(srv *Server) {
+		srv.codec = c
+	})
+}
+
 func NewServer(addr string, registry *registry.Registry, opts ...Option) *Server {
 	s := &Server{
 		addr:     addr,
-		codec:    codec.JSONCodec{},
 		registry: registry,
 	}
 
@@ -47,7 +52,7 @@ func NewServer(addr string, registry *registry.Registry, opts ...Option) *Server
 
 type Server struct {
 	addr     string
-	codec    codec.JSONCodec
+	codec    codec.Codec
 	registry *registry.Registry
 
 	logger *zap.Logger
@@ -69,7 +74,7 @@ func (s *Server) Invoke(req *protocol.Request, resp *protocol.Response) error {
 
 	// 创建参数实例
 	paramPtr := reflect.New(paramType)
-	if err := s.codec.Decode(req.Params, paramPtr.Interface()); err != nil {
+	if err := s.codec.Unmarshal(req.Params, paramPtr.Interface()); err != nil {
 		resp.Error = err.Error()
 		return err
 	}
@@ -89,7 +94,7 @@ func (s *Server) Invoke(req *protocol.Request, resp *protocol.Response) error {
 	}
 
 	// 编码返回值
-	respData, err := s.codec.Encode(retValue)
+	respData, err := s.codec.Marshal(retValue)
 	if err != nil {
 		resp.Error = err.Error()
 		return err
@@ -135,7 +140,7 @@ func (s *Server) handleConn(conn net.Conn) {
 		}
 
 		var req = pool.GetRequest()
-		if err := s.codec.Decode(data, req); err != nil {
+		if err := s.codec.Unmarshal(data, req); err != nil {
 			return
 		}
 
@@ -144,7 +149,7 @@ func (s *Server) handleConn(conn net.Conn) {
 			resp.Error = err.Error()
 		}
 
-		respData, err := s.codec.Encode(resp)
+		respData, err := s.codec.Marshal(resp)
 		if err != nil {
 			s.logger.Error("failed to encode response", zap.Error(err))
 		}
