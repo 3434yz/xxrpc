@@ -16,7 +16,6 @@ go.sum
 vendor/
 
 # 测试相关
-*_test.go
 *_test.out
 _test/
 coverage.out

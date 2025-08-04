@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 
 	"xxrpc/codec"
+	"xxrpc/internal/pool"
 	"xxrpc/protocol"
 	"xxrpc/registry"
 )
@@ -24,10 +25,24 @@ func (f optionFunc) Apply(srv *Server) {
 	f(srv)
 }
 
-func WithLogger(func(*Server) *Server) Option {
+func WithLogger(logger *zap.Logger) Option {
 	return optionFunc(func(srv *Server) {
-		srv.logger = zap.NewExample()
+		srv.logger = logger
 	})
+}
+
+func NewServer(addr string, registry *registry.Registry, opts ...Option) *Server {
+	s := &Server{
+		addr:     addr,
+		codec:    codec.JSONCodec{},
+		registry: registry,
+	}
+
+	for _, opt := range opts {
+		opt.Apply(s)
+	}
+
+	return s
 }
 
 type Server struct {
@@ -42,62 +57,51 @@ func (s *Server) Register(name string, service any) {
 	s.registry.Register(name, service)
 }
 
-func (s *Server) Invoke(req *protocol.Request) (*protocol.Response, error) {
+func (s *Server) Invoke(req *protocol.Request, resp *protocol.Response) error {
 	receiver, method, err := s.registry.Find(req.Service, req.Method)
 	if err != nil {
-		return nil, err
+		resp.Error = err.Error()
+		return err
 	}
 
 	methodType := method.Type
 	paramType := methodType.In(1)
 
 	// 创建参数实例
-	paramPtr := reflect.New(paramType) // 指针类型
+	paramPtr := reflect.New(paramType)
 	if err := s.codec.Decode(req.Params, paramPtr.Interface()); err != nil {
-		return nil, err
+		resp.Error = err.Error()
+		return err
 	}
 
-	// 调用目标方法：receiver.Method(args)
+	// 调用目标方法
 	results := method.Func.Call([]reflect.Value{receiver, paramPtr.Elem()})
-
-	// 解析返回值
 	retValue := results[0].Interface()
+
 	var retErr error
 	if !results[1].IsNil() {
 		retErr = results[1].Interface().(error)
 	}
 
 	if retErr != nil {
-		return &protocol.Response{
-			Error: retErr.Error(),
-		}, nil
+		resp.Error = retErr.Error()
+		return nil
 	}
 
-	// 编码返回数据
+	// 编码返回值
 	respData, err := s.codec.Encode(retValue)
 	if err != nil {
-		return nil, err
+		resp.Error = err.Error()
+		return err
 	}
 
-	return &protocol.Response{
-		Data:  respData,
-		Error: "",
-	}, nil
+	resp.Data = respData
+	resp.Error = ""
+	return nil
 }
 
-func NewServer(addr string, registry *registry.Registry, opts ...Option) *Server {
-	s := &Server{
-		addr:     addr,
-		codec:    codec.JSONCodec{},
-		registry: registry,
-		logger:   zap.NewExample(),
-	}
-
-	for _, opt := range opts {
-		opt.Apply(s)
-	}
-
-	return s
+func (s *Server) Logger() *zap.Logger {
+	return s.logger
 }
 
 func (s *Server) Start() error {
@@ -130,19 +134,23 @@ func (s *Server) handleConn(conn net.Conn) {
 			return
 		}
 
-		var req protocol.Request
-		if err := s.codec.Decode(data, &req); err != nil {
+		var req = pool.GetRequest()
+		if err := s.codec.Decode(data, req); err != nil {
 			return
 		}
 
-		resp, err := s.Invoke(&req)
-		if err != nil {
-			resp = &protocol.Response{
-				Error: err.Error(),
-			}
+		var resp = pool.GetResponse()
+		if err := s.Invoke(req, resp); err != nil {
+			resp.Error = err.Error()
 		}
-		respData, _ := s.codec.Encode(resp)
+
+		respData, err := s.codec.Encode(resp)
+		if err != nil {
+			s.logger.Error("failed to encode response", zap.Error(err))
+		}
 		binary.Write(conn, binary.BigEndian, uint32(len(respData)))
 		conn.Write(respData)
+		pool.PutRequest(req)
+		pool.PutResponse(resp)
 	}
 }
