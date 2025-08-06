@@ -34,8 +34,29 @@ func BenchmarkEcho(b *testing.B) {
 	cmd := setupEchoServer(b)
 	defer stopEchoServer(cmd)
 
-	req := &echo.SayHelloReq{
-		Message: "Hello, World!",
+	req := echo.ComplexHelloReq{
+		Message:   "Hello",
+		ID:        12345,
+		Timestamp: time.Now(),
+		Metadata:  map[string]string{"key": "value"},
+		Tags:      []string{"go", "rpc", "test"},
+		Nested: struct {
+			Name  string
+			Score float64
+		}{
+			Name:  "nested",
+			Score: 9.8,
+		},
+		Data:       []byte("payload"),
+		Attributes: [5]int{1, 2, 3, 4, 5},
+		Enabled:    true,
+		Options: &struct {
+			Retry   int
+			Timeout time.Duration
+		}{
+			Retry:   3,
+			Timeout: time.Second,
+		},
 	}
 
 	var (
@@ -56,7 +77,7 @@ func BenchmarkEcho(b *testing.B) {
 
 		for p.Next() {
 			begin := time.Now()
-			_, err := cli.Call("EchoService", "SayHello", req)
+			_, err := cli.Call("EchoService.ComplexHello", req)
 			elapsed := time.Since(begin).Nanoseconds()
 
 			atomic.AddInt64(&totalLatency, elapsed)
@@ -77,8 +98,8 @@ func BenchmarkEcho(b *testing.B) {
 	qps := float64(successCount) / duration.Seconds()
 
 	b.Logf("Total Requests: %d", total)
-	b.Logf("  Successful:   %d", successCount)
-	b.Logf("  Failed:       %d", failCount)
+	b.Logf("Successful Count: %d", successCount)
+	b.Logf("Failed: Count: %d", failCount)
 	b.Logf("Average Latency: %v", avgLatency)
 	b.Logf("QPS: %.2f", qps)
 }

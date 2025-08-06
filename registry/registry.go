@@ -2,50 +2,45 @@ package registry
 
 import (
 	"fmt"
-	"reflect"
+	"xxrpc/internal/codec"
 )
 
-type serviceMethod struct {
-	method   reflect.Method
-	receiver reflect.Value
+// 调用侧是从Registry中找到对应的服务和方法
+// 服务端注册侧是将服务和方法注册到Registry中
+// 根据传入的MethodName找到对应的处理函数
+// 处理函数的签名是 func([]byte) ([]byte, error)
+type Service interface {
+	Register(*Registry, codec.Codec) // 注册服务和方法到注册表
+	Name() string                    // 返回服务名称
+}
+
+type HandlerFunc func([]byte) ([]byte, error)
+
+type ServiceMethod struct {
+	Handler HandlerFunc
 }
 
 type Registry struct {
-	services map[string]map[string]*serviceMethod
+	ServiceMethods map[string]*ServiceMethod
 }
 
 func NewRegister() *Registry {
 	return &Registry{
-		services: make(map[string]map[string]*serviceMethod),
+		ServiceMethods: make(map[string]*ServiceMethod),
 	}
 }
 
 // Register 注册一个服务
-func (r *Registry) Register(serviceName string, svc any) error {
-	svcType := reflect.TypeOf(svc)
-	svcValue := reflect.ValueOf(svc)
-
-	methods := make(map[string]*serviceMethod)
-	for i := 0; i < svcType.NumMethod(); i++ {
-		m := svcType.Method(i)
-		methods[m.Name] = &serviceMethod{
-			method:   m,
-			receiver: svcValue,
-		}
-	}
-	r.services[serviceName] = methods
+func (r *Registry) Register(svc Service, c codec.Codec) error {
+	svc.Register(r, c)
 	return nil
 }
 
 // Find 找到某一个服务的方法
-func (r *Registry) Find(serviceName, methodName string) (reflect.Value, reflect.Method, error) {
-	methods, ok := r.services[serviceName]
+func (r *Registry) Find(serviceMethodName string) (HandlerFunc, error) {
+	serviceMethod, ok := r.ServiceMethods[serviceMethodName]
 	if !ok {
-		return reflect.Value{}, reflect.Method{}, fmt.Errorf("service %s not found", serviceName)
+		return nil, fmt.Errorf("serviceMethodName %s not found ", serviceMethodName)
 	}
-	method, ok := methods[methodName]
-	if !ok {
-		return reflect.Value{}, reflect.Method{}, fmt.Errorf("method %s not found in service %s", methodName, serviceName)
-	}
-	return method.receiver, method.method, nil
+	return serviceMethod.Handler, nil
 }

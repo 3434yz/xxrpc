@@ -9,13 +9,13 @@ import (
 var (
 	requestPool = sync.Pool{
 		New: func() any {
-			return &protocol.Request{}
+			return &protocol.Request{Params: make([]byte, 1024)}
 		},
 	}
 
 	responsePool = sync.Pool{
 		New: func() any {
-			return &protocol.Response{}
+			return &protocol.Response{Data: make([]byte, 1024)}
 		},
 	}
 

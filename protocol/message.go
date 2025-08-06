@@ -1,15 +1,15 @@
 package protocol
 
 type Request struct {
-	Service string // e.g., "UserService"
-	Method  string // e.g., "GetUser"
-	Params  []byte // 参数的序列化数据
+	Method string // e.g., "UserService.GetUser"
+	Params []byte // 参数的序列化数据
 }
 
 func (r *Request) Reset() {
-	r.Service = ""
 	r.Method = ""
-	r.Params = r.Params[:0] // 清空切片但不释放内存
+	if r.Params != nil {
+		r.Params = r.Params[:0] // 清空切片但不释放内存
+	}
 }
 
 type Response struct {
@@ -18,6 +18,8 @@ type Response struct {
 }
 
 func (r *Response) Reset() {
-	r.Data = r.Data[:0] // 清空切片但不释放内存
 	r.Error = ""
+	if r.Data != nil {
+		r.Data = r.Data[:0] // 清空切片但不释放内存
+	}
 }

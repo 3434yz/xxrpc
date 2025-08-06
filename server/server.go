@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"io"
 	"net"
-	"reflect"
 
 	"go.uber.org/zap"
 
@@ -58,46 +57,21 @@ type Server struct {
 	logger *zap.Logger
 }
 
-func (s *Server) Register(name string, service any) {
-	s.registry.Register(name, service)
+func (s *Server) Register(service registry.Service) {
+	s.registry.Register(service, s.codec)
 }
 
 func (s *Server) Invoke(req *protocol.Request, resp *protocol.Response) error {
-	receiver, method, err := s.registry.Find(req.Service, req.Method)
+	handler, err := s.registry.Find(req.Method)
 	if err != nil {
 		resp.Error = err.Error()
 		return err
 	}
 
-	methodType := method.Type
-	paramType := methodType.In(1)
-
-	// 创建参数实例
-	paramPtr := reflect.New(paramType)
-	if err := s.codec.Unmarshal(req.Params, paramPtr.Interface()); err != nil {
+	respData, err := handler(req.Params)
+	if err != nil {
 		resp.Error = err.Error()
-		return err
-	}
-
-	// 调用目标方法
-	results := method.Func.Call([]reflect.Value{receiver, paramPtr.Elem()})
-	retValue := results[0].Interface()
-
-	var retErr error
-	if !results[1].IsNil() {
-		retErr = results[1].Interface().(error)
-	}
-
-	if retErr != nil {
-		resp.Error = retErr.Error()
 		return nil
-	}
-
-	// 编码返回值
-	respData, err := s.codec.Marshal(retValue)
-	if err != nil {
-		resp.Error = err.Error()
-		return err
 	}
 
 	resp.Data = respData

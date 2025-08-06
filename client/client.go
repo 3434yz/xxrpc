@@ -22,12 +22,11 @@ func Dial(addr string) (*Client, error) {
 	return &Client{conn: conn}, nil
 }
 
-func (c *Client) Call(service, method string, args any) (*protocol.Response, error) {
+func (c *Client) Call(serviceMethod string, args any) (*protocol.Response, error) {
 	payload, _ := c.codec.Marshal(args)
 	req := protocol.Request{
-		Service: service,
-		Method:  method,
-		Params:  payload,
+		Method: serviceMethod,
+		Params: payload,
 	}
 
 	c.seq++
@@ -44,4 +43,11 @@ func (c *Client) Call(service, method string, args any) (*protocol.Response, err
 	var resp protocol.Response
 	c.codec.Unmarshal(buf, &resp)
 	return &resp, nil
+}
+
+func (c *Client) Close() error {
+	if c.conn != nil {
+		return c.conn.Close()
+	}
+	return nil
 }
