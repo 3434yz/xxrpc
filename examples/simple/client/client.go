@@ -12,9 +12,10 @@ import (
 
 // 配置参数
 const (
-	maxGoroutines      = 500 // 最大goroutine数量限制
-	runtimeMinSec      = 30  // 最小运行时间(秒)
-	connectionPoolSize = 10  // 连接池大小，根据服务器承载能力调整
+	maxGoroutines      = 100   // 最大goroutine数量限制
+	runtimeMinSec      = 30000 // 最小运行时间(秒)
+	connectionPoolSize = 10    // 连接池大小，根据服务器承载能力调整
+	statsInterval      = 5     // 统计信息打印间隔(秒)
 )
 
 // 连接池结构体，管理可复用的RPC连接
@@ -75,7 +76,7 @@ func closeConnections(pool chan *client.Client) {
 }
 
 // 使用复用的连接执行RPC调用
-func RPCCall(pool *ConnectionPool) {
+func RPCCall(pool *ConnectionPool) error {
 	// 从连接池获取连接
 	cli := pool.Get()
 	defer pool.Put(cli) // 调用完成后放回连接池
@@ -106,13 +107,8 @@ func RPCCall(pool *ConnectionPool) {
 	}
 
 	// 执行RPC调用
-	resp, err := cli.Call("EchoService.ComplexHello", req)
-	if err != nil {
-		log.Printf("rpc call error: %v", err)
-		return
-	}
-
-	fmt.Printf("client got: %v\n", string(resp.Data))
+	_, err := cli.Call("EchoService.ComplexHello", req)
+	return err
 }
 
 func main() {
@@ -131,6 +127,30 @@ func main() {
 	errorCount := 0
 	var mu sync.Mutex // 用于安全更新统计数据
 
+	// 启动统计信息打印goroutine
+	statsTicker := time.NewTicker(time.Duration(statsInterval) * time.Second)
+	defer statsTicker.Stop()
+
+	go func() {
+		for range statsTicker.C {
+			mu.Lock()
+			elapsed := time.Since(startTime)
+			qps := 0.0
+			if elapsed.Seconds() > 0 {
+				qps = float64(successCount) / elapsed.Seconds()
+			}
+
+			fmt.Printf("\n===== 运行统计 =====")
+			fmt.Printf("\n当前运行时间: %v", elapsed)
+			fmt.Printf("\n总调用次数: %d", taskCount)
+			fmt.Printf("\n成功次数: %d", successCount)
+			fmt.Printf("\n错误次数: %d", errorCount)
+			fmt.Printf("\n平均QPS: %.2f", qps)
+			fmt.Printf("\n====================\n\n")
+			mu.Unlock()
+		}
+	}()
+
 	// 持续运行直到达到最小运行时间
 	for time.Since(startTime) < time.Duration(runtimeMinSec)*time.Second {
 		// 控制任务生成速度，避免过早填满信号量
@@ -143,11 +163,16 @@ func main() {
 			defer func() { <-semaphore }()
 
 			// 执行RPC调用
-			RPCCall(pool)
+			err := RPCCall(pool)
 
 			// 更新统计数据
 			mu.Lock()
-			successCount++
+			if err != nil {
+				errorCount++
+				log.Printf("rpc call error: %v", err)
+			} else {
+				successCount++
+			}
 			mu.Unlock()
 		}()
 
@@ -161,7 +186,7 @@ func main() {
 	wg.Wait()
 	duration := time.Since(startTime)
 
-	fmt.Printf("所有RPC调用完成。\n")
+	fmt.Printf("\n\n所有RPC调用完成。\n")
 	fmt.Printf("总运行时间: %v\n", duration)
 	fmt.Printf("总调用次数: %d\n", taskCount)
 	fmt.Printf("成功次数: %d\n", successCount)

@@ -3,19 +3,20 @@ package pool
 import (
 	"sync"
 
+	"xxrpc/internal/buffer"
 	"xxrpc/protocol"
 )
 
 var (
 	requestPool = sync.Pool{
 		New: func() any {
-			return &protocol.Request{Params: make([]byte, 1024)}
+			return &protocol.Request{Params: buffer.GetBuffer()}
 		},
 	}
 
 	responsePool = sync.Pool{
 		New: func() any {
-			return &protocol.Response{Data: make([]byte, 1024)}
+			return &protocol.Response{Data: buffer.GetBuffer()}
 		},
 	}
 
@@ -28,12 +29,17 @@ var (
 	}
 
 	PutRequest = func(req *protocol.Request) {
-		req.Reset()
+		req.Method = ""
+		if req.Params != nil {
+			buffer.PutBuffer(req.Params)
+		}
 		requestPool.Put(req)
 	}
 
 	PutResponse = func(resp *protocol.Response) {
-		resp.Reset()
+		if resp.Data != nil {
+			buffer.PutBuffer(resp.Data)
+		}
 		responsePool.Put(resp)
 	}
 )

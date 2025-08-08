@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/binary"
 	"io"
 	"net"
 
@@ -68,13 +67,13 @@ func (s *Server) Invoke(req *protocol.Request, resp *protocol.Response) error {
 		return err
 	}
 
-	respData, err := handler(req.Params)
+	respData, err := handler(*req.Params)
 	if err != nil {
 		resp.Error = err.Error()
 		return nil
 	}
 
-	resp.Data = respData
+	resp.Data = &respData
 	resp.Error = ""
 	return nil
 }
@@ -103,22 +102,22 @@ func (s *Server) handleConn(conn net.Conn) {
 	defer conn.Close()
 
 	for {
-		var length uint32
-		if err := binary.Read(conn, binary.BigEndian, &length); err != nil {
+		data, err := protocol.ReadFrame(conn)
+		if err != nil {
+			if err != io.EOF {
+				s.logger.Error("failed to read frame", zap.Error(err))
+			}
 			return
 		}
 
-		data := make([]byte, length)
-		if _, err := io.ReadFull(conn, data); err != nil {
-			return
-		}
-
-		var req = pool.GetRequest()
+		req := pool.GetRequest()
 		if err := s.codec.Unmarshal(data, req); err != nil {
+			s.logger.Error("failed to decode request", zap.Error(err))
+			pool.PutRequest(req)
 			return
 		}
 
-		var resp = pool.GetResponse()
+		resp := pool.GetResponse()
 		if err := s.Invoke(req, resp); err != nil {
 			resp.Error = err.Error()
 		}
@@ -126,9 +125,13 @@ func (s *Server) handleConn(conn net.Conn) {
 		respData, err := s.codec.Marshal(resp)
 		if err != nil {
 			s.logger.Error("failed to encode response", zap.Error(err))
+		} else {
+			if err := protocol.WriteFrame(conn, respData); err != nil {
+				s.logger.Error("failed to write frame", zap.Error(err))
+				return
+			}
 		}
-		binary.Write(conn, binary.BigEndian, uint32(len(respData)))
-		conn.Write(respData)
+
 		pool.PutRequest(req)
 		pool.PutResponse(resp)
 	}

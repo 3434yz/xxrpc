@@ -1,7 +1,6 @@
 package client
 
 import (
-	"encoding/binary"
 	"net"
 
 	"xxrpc/internal/codec"
@@ -26,22 +25,25 @@ func (c *Client) Call(serviceMethod string, args any) (*protocol.Response, error
 	payload, _ := c.codec.Marshal(args)
 	req := protocol.Request{
 		Method: serviceMethod,
-		Params: payload,
+		Params: &payload,
 	}
 
 	c.seq++
 
 	data, _ := c.codec.Marshal(req)
-	binary.Write(c.conn, binary.BigEndian, uint32(len(data)))
-	c.conn.Write(data)
+	if err := protocol.WriteFrame(c.conn, data); err != nil {
+		return nil, err
+	}
 
-	var length uint32
-	binary.Read(c.conn, binary.BigEndian, &length)
-	buf := make([]byte, length)
-	c.conn.Read(buf)
+	buf, err := protocol.ReadFrame(c.conn)
+	if err != nil {
+		return nil, err
+	}
 
 	var resp protocol.Response
-	c.codec.Unmarshal(buf, &resp)
+	if err := c.codec.Unmarshal(buf, &resp); err != nil {
+		return nil, err
+	}
 	return &resp, nil
 }
 
