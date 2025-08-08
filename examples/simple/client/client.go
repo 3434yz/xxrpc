@@ -12,10 +12,10 @@ import (
 
 // 配置参数
 const (
-	maxGoroutines      = 100   // 最大goroutine数量限制
-	runtimeMinSec      = 30000 // 最小运行时间(秒)
-	connectionPoolSize = 10    // 连接池大小，根据服务器承载能力调整
-	statsInterval      = 5     // 统计信息打印间隔(秒)
+	maxGoroutines      = 100           // 最大goroutine数量限制
+	runtimeMinSec      = 300           // 最小运行时间(秒)
+	connectionPoolSize = maxGoroutines // 连接池大小，根据服务器承载能力调整
+	statsInterval      = 5             // 统计信息打印间隔(秒)
 )
 
 // 连接池结构体，管理可复用的RPC连接
@@ -152,7 +152,7 @@ func main() {
 	}()
 
 	// 持续运行直到达到最小运行时间
-	for time.Since(startTime) < time.Duration(runtimeMinSec)*time.Second {
+	for time.Duration(time.Since(startTime).Seconds()) < time.Duration(runtimeMinSec)*time.Second {
 		// 控制任务生成速度，避免过早填满信号量
 		semaphore <- struct{}{}
 		wg.Add(1)
