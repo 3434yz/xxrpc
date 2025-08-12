@@ -94,7 +94,7 @@ func (s *Server) Start() error {
 		if err != nil {
 			continue
 		}
-		go s.handleConn(conn)
+		go s.handleConnV1(conn)
 	}
 }
 
@@ -134,5 +134,49 @@ func (s *Server) handleConn(conn net.Conn) {
 
 		pool.PutRequest(req)
 		pool.PutResponse(resp)
+	}
+}
+
+func (s *Server) handleConnV1(conn net.Conn) {
+	fc := protocol.NewFrameConn(conn)
+	defer fc.Close()
+
+	for {
+		data, err := fc.ReadFrame()
+		if err != nil {
+			if err != io.EOF {
+				s.logger.Error("read frame error", zap.Error(err))
+			}
+			return
+		}
+
+		req := pool.GetRequest()
+		// 注意： req.Params 是 *[]byte 或 []byte，根据你的实现，这里假设 req.Params is *[]byte or pointer.
+		if err := s.codec.Unmarshal(data, req); err != nil {
+			s.logger.Error("decode request error", zap.Error(err))
+			pool.PutRequest(req)
+			continue
+		}
+
+		resp := pool.GetResponse()
+		if err := s.Invoke(req, resp); err != nil {
+			resp.Error = err.Error()
+		}
+
+		respData, err := s.codec.Marshal(resp)
+		if err != nil {
+			s.logger.Error("failed to encode response", zap.Error(err))
+		} else {
+			if err := fc.WriteFrame(respData); err != nil {
+				s.logger.Error("failed to write frame", zap.Error(err))
+				pool.PutRequest(req)
+				pool.PutResponse(resp)
+				return
+			}
+		}
+
+		pool.PutRequest(req)
+		pool.PutResponse(resp)
+		// note: data slice is backed by fc buffer; do not retain it beyond this iteration
 	}
 }
