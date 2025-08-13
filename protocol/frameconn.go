@@ -58,41 +58,34 @@ func (fc *FrameConn) Close() error {
 }
 
 func (fc *FrameConn) ensureAvailable(n int) (bool, error) {
-	// if already enough
 	if fc.end-fc.start >= n {
 		return true, nil
 	}
 
-	// shift leftover to beginning if start > 0 and there's not enough room
+	// 如果 start 和 end 非零，并且未满，则将剩余的字节复制到缓冲区的开头
 	if fc.start > 0 && fc.start != fc.end {
-		// copy leftover to beginning
 		copy((*fc.buf)[:fc.end-fc.start], (*fc.buf)[fc.start:fc.end])
 		fc.end = fc.end - fc.start
 		fc.start = 0
 	} else if fc.start == fc.end {
-		// nothing in buffer
 		fc.start = 0
 		fc.end = 0
 	}
 
-	// read loop: try to read as much as possible in one syscall
+	// 如果缓冲区容量不够，进行一次读取操作
 	capacity := cap(*fc.buf)
-	// if buffer has no room, and requested n > capacity, return false to allow caller to handle large frames
 	if fc.end+1 > capacity {
-		// no room; grow if needed but keep pooled behavior: allocate exact size if requested > capacity
 		if n > capacity {
 			return false, nil
 		}
 	}
 
-	// read once (we intentionally perform a single Read to reduce syscalls)
 	readInto := (*fc.buf)[fc.end:capacity]
 	nr, err := fc.conn.Read(readInto)
 	if nr > 0 {
 		fc.end += nr
 	}
 	if err != nil {
-		// if err == io.EOF and we still have enough bytes this may be ok, otherwise return error
 		if err == io.EOF && fc.end-fc.start >= n {
 			return true, nil
 		}
@@ -220,17 +213,7 @@ func (fc *FrameConn) WriteFrame(payload []byte) error {
 	var lenBuf [4]byte
 	binary.BigEndian.PutUint32(lenBuf[:], uint32(len(payload)))
 
-	// Use net.Buffers WriteTo when possible for single-syscall writev
-	if tcpConn, ok := fc.conn.(net.Conn); ok {
-		buf := net.Buffers{lenBuf[:], payload}
-		_, err := buf.WriteTo(tcpConn)
-		return err
-	}
-
-	// fallback
-	if _, err := fc.conn.Write(lenBuf[:]); err != nil {
-		return err
-	}
-	_, err := fc.conn.Write(payload)
+	buf := net.Buffers{lenBuf[:], payload}
+	_, err := buf.WriteTo(fc.conn)
 	return err
 }

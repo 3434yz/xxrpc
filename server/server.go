@@ -98,45 +98,6 @@ func (s *Server) Start() error {
 	}
 }
 
-func (s *Server) handleConn(conn net.Conn) {
-	defer conn.Close()
-
-	for {
-		data, err := protocol.ReadFrame(conn)
-		if err != nil {
-			if err != io.EOF {
-				s.logger.Error("failed to read frame", zap.Error(err))
-			}
-			return
-		}
-
-		req := pool.GetRequest()
-		if err := s.codec.Unmarshal(data, req); err != nil {
-			s.logger.Error("failed to decode request", zap.Error(err))
-			pool.PutRequest(req)
-			return
-		}
-
-		resp := pool.GetResponse()
-		if err := s.Invoke(req, resp); err != nil {
-			resp.Error = err.Error()
-		}
-
-		respData, err := s.codec.Marshal(resp)
-		if err != nil {
-			s.logger.Error("failed to encode response", zap.Error(err))
-		} else {
-			if err := protocol.WriteFrame(conn, respData); err != nil {
-				s.logger.Error("failed to write frame", zap.Error(err))
-				return
-			}
-		}
-
-		pool.PutRequest(req)
-		pool.PutResponse(resp)
-	}
-}
-
 func (s *Server) handleConnV1(conn net.Conn) {
 	fc := protocol.NewFrameConn(conn)
 	defer fc.Close()
